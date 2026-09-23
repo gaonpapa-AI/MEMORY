@@ -5,3 +5,4 @@ __pycache__/
 data_cache/
 reports/
 paper_state.json
+kiwoom_mock/

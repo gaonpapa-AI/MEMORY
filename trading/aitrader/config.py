@@ -13,8 +13,25 @@ class CostConfig:
     commission_rate: float = 0.0025
     # 미국 SEC 수수료(매도 시에만 부과). 실제 요율은 주기적으로 바뀌므로 확인 필요.
     sec_fee_rate: float = 0.0000278
+    # 매도 시 부과되는 세금 (국내주식 증권거래세 등). 미국주식은 0
+    sell_tax_rate: float = 0.0
     # 호가 공백·시장가 체결로 인한 슬리피지 (basis point, 1bp = 0.01%)
     slippage_bps: float = 5.0
+
+    @property
+    def sell_fee_rate(self) -> float:
+        """매도 시 수수료 외에 추가로 빠지는 비율 (SEC 수수료 + 거래세)."""
+        return self.sec_fee_rate + self.sell_tax_rate
+
+
+def kr_cost() -> CostConfig:
+    """국내주식 기본 비용. 세율은 해마다 바뀔 수 있으니 실제 적용 전 확인할 것."""
+    return CostConfig(
+        commission_rate=0.00015,  # 증권사 온라인 수수료 (약 0.015%)
+        sec_fee_rate=0.0,
+        sell_tax_rate=0.0020,  # 증권거래세 + 농어촌특별세 (약 0.20%)
+        slippage_bps=5.0,
+    )
 
 
 @dataclass

@@ -106,7 +106,7 @@ def run_backtest(
         pos = positions.pop(t)
         price = raw_price * (1 - slip)
         gross = price * pos.shares
-        proceeds = gross - gross * (c.commission_rate + c.sec_fee_rate)
+        proceeds = gross - gross * (c.commission_rate + c.sell_fee_rate)
         cash += proceeds
         pnl = proceeds - pos.entry_cost
         trades.append(

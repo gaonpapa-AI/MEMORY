@@ -26,8 +26,9 @@ class Fill:
     ticker: str
     side: str  # "buy" | "sell"
     shares: int
-    price: float
+    price: float  # 모의 브로커는 체결가, 실제 증권사는 주문 시점 현재가(추정)
     fee: float
+    order_no: str = ""
 
 
 class Broker(ABC):
@@ -102,7 +103,7 @@ class PaperBroker(Broker):
             return None
         shares = min(shares, pos.shares)
         price = self.get_price(ticker) * (1 - self.cost.slippage_bps / 10_000)
-        fee = shares * price * (self.cost.commission_rate + self.cost.sec_fee_rate)
+        fee = shares * price * (self.cost.commission_rate + self.cost.sell_fee_rate)
         self.cash += shares * price - fee
         if shares == pos.shares:
             del self.positions[ticker]

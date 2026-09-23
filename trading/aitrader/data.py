@@ -89,3 +89,16 @@ def synthetic(
             index=dates,
         )
     return out
+
+
+def load_krx(codes: list[str], start: str, end: str | None = None) -> dict[str, pd.DataFrame]:
+    """국내주식 일봉 (FinanceDataReader). 키움 API 키 없이 백테스트할 때 쓴다."""
+    import FinanceDataReader as fdr
+
+    out = {}
+    for code in codes:
+        raw = fdr.DataReader(code, start, end)
+        if raw.empty:
+            raise RuntimeError(f"{code}: 데이터를 받지 못했습니다")
+        out[code] = _normalize(raw)
+    return out

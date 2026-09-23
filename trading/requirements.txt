@@ -4,3 +4,5 @@ scikit-learn>=1.3
 yfinance>=0.2.40
 requests>=2.31
 pytest>=7.0
+holidays>=0.50
+finance-datareader>=0.9.90

@@ -23,6 +23,8 @@
 | `aitrader/broker.py` | `Broker` 인터페이스 + `PaperBroker`(JSON 상태 저장 모의계좌) |
 | `aitrader/live.py` | `run_daily`(장 마감 후 1회), `check_stops`(장중 손절 감시) |
 | `aitrader/notify.py` | 텔레그램 알림 |
+| `aitrader/kiwoom.py` | 키움 REST API 클라이언트(토큰·주문·잔고·체결·일봉)와 `KiwoomBroker` |
+| `aitrader/kr_live.py` | 국내주식 운영기: 장 시작 주문, 장중 손절 감시, 장 마감 기록·계획, 성과 집계 |
 | `aitrader/dashboard.py` | 백테스트 결과 → 단일 HTML 대시보드 (누적수익·낙폭·청산사유·월별수익·거래내역) |
 
 ## 설치
@@ -72,13 +74,73 @@ pytest
   공제 후 22%)는 백테스트에 반영되지 않았습니다.
 - **생존 편향**: 현재 대형주 목록으로 과거를 테스트하면 성과가 부풀려집니다.
 
+## 키움 모의투자 (국내주식)
+
+키움 REST API 모의투자 서버(`mockapi.kiwoom.com`)에 실제 주문을 내고, 매일 성과를 기록합니다.
+코드는 모의투자 서버에만 접속하도록 고정되어 있습니다.
+
+### 준비
+
+1. 키움증권 홈페이지 > 모의투자 > **상시모의투자 신청**
+2. [키움 REST API 포털](https://openapi.kiwoom.com)에서 API 사용 신청 후 **모의투자용 App Key / Secret Key 발급**
+   (실전투자 키와 다릅니다)
+3. 키를 환경변수로 설정 (코드·채팅·깃에 붙여넣지 마세요)
+
+```powershell
+# Windows PowerShell (영구 설정)
+setx KIWOOM_APP_KEY "발급받은_앱키"
+setx KIWOOM_APP_SECRET "발급받은_시크릿키"
+```
+```bash
+# macOS / Linux
+export KIWOOM_APP_KEY="발급받은_앱키"
+export KIWOOM_APP_SECRET="발급받은_시크릿키"
+```
+
+### 실행
+
+```bash
+pip install -r requirements.txt
+
+# 1) 접속·잔고·일봉 조회 확인 (주문 없음)
+python -m aitrader kiwoom check
+
+# 2) (선택) 국내주식 백테스트로 기대치 먼저 보기
+python -m aitrader dashboard --market kr --out reports/kr_backtest.html
+
+# 3) 자동 운영: 켜 두면 매 거래일 아래를 반복합니다. PC가 켜져 있어야 합니다
+python -m aitrader kiwoom run
+
+# 4) 언제든 성과 확인
+python -m aitrader kiwoom report      # → reports/kiwoom_mock.html
+```
+
+| 시각 (KST) | 하는 일 |
+|---|---|
+| 09:00:30 | 전날 계획한 주문을 **시장가**로 제출 (백테스트의 "다음날 시가 체결"과 같은 시점) |
+| 09:01 ~ 15:19 | 1분마다 보유 종목 현재가 확인, **매입가 대비 −2% 이하면 즉시 매도** |
+| 15:40 | 당일 체결내역·추정예탁자산·KODEX 200 종가 기록 → 다음날 주문 계획 → 텔레그램 요약 |
+
+- 주말·공휴일·12/31은 쉬고, 오늘 일봉이 없으면 휴장으로 보고 건너뜁니다.
+- 프로그램을 며칠 꺼 두었다면 묵은 주문은 내지 않고 다시 계획부터 시작합니다.
+- 종목은 기본으로 시가총액 상위 20개(`kr_live.KR_UNIVERSE`)이며 `--tickers 005930 000660 ...`으로 바꿀 수 있습니다.
+- 기록은 `kiwoom_mock/` 폴더에 쌓입니다: `perf.csv`(일별 자산), `fills.csv`(실제 체결),
+  `orders.csv`(주문·사유), `plans.csv`(신호·필터 통계), `journal.json`(매수일).
+- 수동 실행도 가능합니다: `kiwoom close`(기록+계획), `kiwoom execute`(주문), `kiwoom monitor`(손절 점검 1회).
+
+### 한계
+
+- 손절은 1분 간격 감시라 급락 시 −2%보다 더 밀려서 체결될 수 있습니다.
+- 모의투자 체결은 실제 시장과 다를 수 있습니다(호가 잔량 무시 등). 수익률은 참고용입니다.
+- 이 코드는 공식 명세와 가짜 응답으로만 테스트했습니다. 처음 `kiwoom check`에서 오류가 나면 메시지를 그대로 알려 주세요.
+
 ## 실계좌 연동 (다음 단계)
 
 `Broker`를 상속해 `get_cash / get_positions / get_price / buy / sell`만 구현하면 `run_daily`,
 `check_stops`를 그대로 쓸 수 있습니다.
 
-> ⚠️ 키움증권 Open API+는 국내주식 전용(Windows 32bit OCX)이라 미국주식 주문을 지원하지 않는 것으로
-> 알고 있습니다. 미국주식을 API로 자동매매하려면 해외주식 주문을 지원하는 한국투자증권 KIS Developers
-> (REST, 모의투자 지원) 등이 필요합니다. 연동 전 최신 지원 범위를 증권사에 꼭 확인하세요.
+> 키움증권은 Windows 전용 Open API+ 외에 OS 무관 **REST API**를 제공하며, 공식 예제에 국내주식과 미국주식
+> 주문이 모두 있습니다. 이 프로젝트는 국내주식 모의투자(`aitrader/kiwoom.py`)를 구현했고, 미국주식 모의투자
+> 지원 여부는 키움에 확인이 필요합니다.
 
 실계좌 전에 최소 수주~수개월간 `paper` 모드로 검증하는 것을 권장합니다.

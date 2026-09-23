@@ -4,6 +4,12 @@
     python -m aitrader backtest --synthetic --compare        # 네트워크 없이 합성 데이터로 데모
     python -m aitrader paper --tickers AAPL MSFT NVDA        # 모의투자 1일 실행 (장 마감 후)
     python -m aitrader dashboard --tickers AAPL MSFT NVDA    # 백테스트 결과 HTML 대시보드
+    python -m aitrader backtest --market kr --compare        # 국내주식 백테스트 (FinanceDataReader)
+
+    # 국내주식 키움 모의투자 (KIWOOM_APP_KEY / KIWOOM_APP_SECRET 필요)
+    python -m aitrader kiwoom check     # 접속·잔고 확인
+    python -m aitrader kiwoom run       # 장 시작 주문 → 장중 손절 감시 → 장 마감 기록·계획 자동 반복
+    python -m aitrader kiwoom report    # 모의투자 성과 대시보드
 """
 from __future__ import annotations
 
@@ -15,7 +21,7 @@ from pathlib import Path
 from . import data as data_mod
 from .backtest import run_backtest
 from .broker import PaperBroker
-from .config import Config
+from .config import Config, kr_cost
 from .dashboard import build_dashboard
 from .live import check_stops, run_daily
 from .notify import Notifier
@@ -24,6 +30,10 @@ DEFAULT_TICKERS = ["AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "AVGO", "COS
 
 
 def load_data(args: argparse.Namespace):
+    if getattr(args, "market", "us") == "kr" and not args.synthetic and not args.csv_dir:
+        from .kr_live import KR_UNIVERSE
+
+        return data_mod.load_krx(args.tickers or list(KR_UNIVERSE), args.start or "2018-01-01", args.end)
     if args.synthetic:
         return data_mod.synthetic(args.tickers or [f"SYN{i}" for i in range(8)])
     if args.csv_dir:
@@ -33,6 +43,8 @@ def load_data(args: argparse.Namespace):
 
 def build_config(args: argparse.Namespace) -> Config:
     cfg = Config(initial_cash=args.cash)
+    if getattr(args, "market", "us") == "kr":
+        cfg.cost = kr_cost()
     cfg.risk = replace(cfg.risk, stop_loss_pct=args.stop_loss)
     cfg.filter = replace(cfg.filter, min_prob=args.min_prob, enabled=not args.no_filter)
     return cfg
@@ -92,11 +104,70 @@ def cmd_paper(args: argparse.Namespace) -> None:
     run_daily(broker, data, cfg, notifier)
 
 
+def cmd_kiwoom(args: argparse.Namespace) -> None:
+    import logging
+
+    from .dashboard import build_live_dashboard
+    from .kiwoom import Journal, KiwoomBroker, KiwoomClient
+    from .kr_live import BENCHMARK, KR_UNIVERSE, LiveTrader
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    cfg = build_config(args)
+    cfg.cost = kr_cost()
+    codes = args.tickers or list(KR_UNIVERSE)
+    names = {c: KR_UNIVERSE.get(c, c) for c in codes}
+    state = Path(args.state_dir)
+
+    if args.action == "report":
+        out = build_live_dashboard(state, cfg, args.out, names)
+        print(f"모의투자 대시보드 저장: {out}")
+        return
+
+    client = KiwoomClient.from_env(mock=True)  # 모의투자 서버 고정
+    broker = KiwoomBroker(client, Journal(state / "journal.json"), cfg.risk.stop_loss_pct, universe=set(codes))
+
+    def load() -> dict:
+        data = {}
+        for c in codes:
+            data[c] = client.daily_chart(c, min_rows=cfg.filter.train_window + 120)
+        return data
+
+    trader = LiveTrader(
+        broker, cfg, load, state, Notifier(),
+        bench_price=lambda: client.current_price(BENCHMARK),
+        fetch_fills=client.today_fills,
+        names=names,
+    )
+    if args.action == "check":
+        client.token()
+        print(f"접속 성공 (모의투자 서버 {client.base_url})")
+        pos = broker.get_positions()
+        print(f"추정예탁자산 {broker.equity():,.0f}원, 주문가능금액 {broker.get_cash():,.0f}원, 보유 {len(pos)}종목")
+        for t, p in pos.items():
+            print(f"  {names.get(t, t)}({t}) {p.shares}주, 매입가 {p.avg_price:,.0f}, 손절가 {p.stop_price:,.0f}")
+        df = client.daily_chart(codes[0], min_rows=5, max_pages=1)
+        print(f"일봉 확인: {names.get(codes[0])} 최근 {df.index[-1].date()} 종가 {df['close'].iloc[-1]:,.0f}")
+    elif args.action == "close":
+        trader.close(force=args.force)
+    elif args.action == "execute":
+        trader.execute()
+    elif args.action == "monitor":
+        trader.monitor_once()
+    elif args.action == "run":
+        trader.run_forever(interval=args.interval)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(prog="aitrader", description="미국주식 퀀트 + AI 리스크 필터")
     sub = p.add_subparsers(dest="cmd", required=True)
-    for name in ("backtest", "paper", "dashboard"):
+    for name in ("backtest", "paper", "dashboard", "kiwoom"):
         s = sub.add_parser(name)
+        if name == "kiwoom":
+            s.add_argument("action", choices=["check", "run", "close", "execute", "monitor", "report"],
+                           help="check: 접속확인 / run: 자동운영 / close: 장마감 기록+계획 / execute: 주문 실행 / "
+                                "monitor: 손절 점검 1회 / report: 성과 대시보드")
+        else:
+            s.add_argument("--market", choices=["us", "kr"], default="us", help="us: 미국주식, kr: 국내주식")
         s.add_argument("--tickers", nargs="+")
         s.add_argument("--start", default=None if name == "paper" else "2018-01-01")
         s.add_argument("--end")
@@ -115,8 +186,14 @@ def main() -> None:
     db.add_argument("--out", default="reports/dashboard.html", help="저장할 HTML 경로")
     db.add_argument("--fragment", action="store_true", help="<!doctype> 없이 본문 조각만 저장")
 
+    kw = sub.choices["kiwoom"]
+    kw.add_argument("--state-dir", default="kiwoom_mock", help="운영 기록 폴더")
+    kw.add_argument("--out", default="reports/kiwoom_mock.html", help="report 저장 경로")
+    kw.add_argument("--interval", type=int, default=60, help="run 루프 간격(초)")
+    kw.add_argument("--force", action="store_true", help="close: 오늘 일봉이 없어도 강제로 기록·계획")
+
     args = p.parse_args()
-    {"backtest": cmd_backtest, "paper": cmd_paper, "dashboard": cmd_dashboard}[args.cmd](args)
+    {"backtest": cmd_backtest, "paper": cmd_paper, "dashboard": cmd_dashboard, "kiwoom": cmd_kiwoom}[args.cmd](args)
 
 
 if __name__ == "__main__":
