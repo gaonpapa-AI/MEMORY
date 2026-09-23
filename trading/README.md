@@ -23,6 +23,7 @@
 | `aitrader/broker.py` | `Broker` 인터페이스 + `PaperBroker`(JSON 상태 저장 모의계좌) |
 | `aitrader/live.py` | `run_daily`(장 마감 후 1회), `check_stops`(장중 손절 감시) |
 | `aitrader/notify.py` | 텔레그램 알림 |
+| `aitrader/dashboard.py` | 백테스트 결과 → 단일 HTML 대시보드 (누적수익·낙폭·청산사유·월별수익·거래내역) |
 
 ## 설치
 
@@ -45,6 +46,9 @@ python -m aitrader backtest --synthetic --compare
 #   --stop-loss 0.03   손절폭 변경 (기본 0.02)
 #   --min-prob 0.6     AI 필터 기준 확률
 #   --no-filter        AI 필터 끄기
+
+# 결과 대시보드 (HTML 한 파일, 브라우저로 열기)
+python -m aitrader dashboard --tickers AAPL MSFT NVDA AMZN GOOGL META --out reports/dashboard.html
 
 # 모의투자 1일 실행 (미국장 마감 후, 상태는 paper_state.json에 누적)
 python -m aitrader paper --tickers AAPL MSFT NVDA
