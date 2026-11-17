@@ -134,7 +134,7 @@ inp("tol", "원본검증 허용오차", 1000, "원", "23_원본검증 판정 기
 ws.freeze_panes = "B4"
 
 # fixed row plan for 02
-S2 = "02_물동판가"; R2 = dict(hdr=4, vol_g=5, share=6, sup_g=7, kg=8, an_g=9, price=11, sales=12, mat=13, va=14, var=15, disc=16)
+S2 = "02_물동시나리오"; R2 = dict(price=13, an_g=21, sup_g=23, kg=25, sales=31, va=34, mat=38, disc=39)
 # =============================== 03 재료비 ===============================
 S3 = "03_재료비"; ws = sh(S3, "03. 재료비 산출 근거 (#4)", {"N": 12, "O": 10})
 sec(ws, 3, "1) 원단위 재료비 (원/g 촉매, 물가 반영) — K: 반영 소요량(g/g), L: 기준단가(원/g)")
@@ -160,23 +160,44 @@ yrow(ws, 19, "재료비 합계", "원", lambda y, c, p: f"={c}17+{c}18", W, tot=
 ws.freeze_panes = "D5"
 R3 = dict(cat=9, an=13, total=19)
 
-# =============================== 02 물동판가 ===============================
-ws = sh(S2, "02. 물동 시나리오 · 판가 · 매출 (#3)")
-sec(ws, 3, "1) 물량 및 판가")
-yhdr(ws, 4)
-yrow(ws, 5, "두산퓨얼셀 제시 물량", "PtCrCo 16.7% (g)", lambda y, c, p: f"={R['vol']}*1000", W, m="연도별로 다르게 하려면 이 행에 직접 입력")
-yrow(ws, 6, "LT 반영률", "", lambda y, c, p: f"={R['share']}", P)
-yrow(ws, 7, "LT 공급량", "Cathode (g)", lambda y, c, p: f"={c}5*{c}6", W, tot=True)
-yrow(ws, 8, "LT 공급량", "Cathode (kg)", lambda y, c, p: f"={c}7/1000", W1)
-yrow(ws, 9, "LT 공급량", "Anode Pt10% (g)", 0, W, inp=True, m="두산퓨얼셀 제시 물량 없음")
-yrow(ws, 11, "판가 (= 임가공비 포함)", "원/g", lambda y, c, p: (f"='{S3}'!{c}{R3['cat']}+{R['proc']}" if y == 2027 else f"={p}11*(1-{R['cut']})"), W1,
-     m="2027 = 재료비 원단위 + 제시 가공비, 이후 매년 판가 인하율 적용")
-yrow(ws, 12, "매출액", "원", lambda y, c, p: f"={c}11*{c}7", W, tot=True)
-yrow(ws, 13, "재료비", "원", lambda y, c, p: f"='{S3}'!{c}{R3['total']}", W)
-yrow(ws, 14, "부가가치 (매출 − 재료비)", "원", lambda y, c, p: f"={c}12-{c}13", W, tot=True)
-yrow(ws, 15, "부가가치율", "", lambda y, c, p: f"=IF({c}12=0,0,{c}14/{c}12)", P)
-yrow(ws, 16, "판가 할인계수", "(1−인하율)^n", lambda y, c, p: f"=(1-{R['cut']})^({c}4-2027)", W4, m="20_입찰시뮬 가공비 민감도 계산용")
-cell(ws, "M12", "※ 원본 #3 표의 단위 '백만원' 표기는 오기 (실제 원 단위)")
+# =============================== 02 물동시나리오 ===============================
+ws = sh(S2, "02. 물동 시나리오 (#3 요약본 2.)", {"B": 16, "C": 30, "K": 12})
+PTC = "PtCrCo16.7% (Pt 12%·Cr 2.7%·Co 2%)"
+sec(ws, 3, "1) 고객사 제시 물량 (촉매)  (단위: g)")
+yhdr(ws, 4, "고객", "구분", ("LT 반영", "", "산출근거"))
+yrow(ws, 5, "두산퓨얼셀", "Pt10% — 두산퓨얼셀 제시 물량", 0, W, inp=True)
+yrow(ws, 6, "", "Pt10% — LT 반영", lambda y, c, p: f"={c}5*$K$6", W, k=1.0, kfmt=P, m="제시 물량의 100% 반영")
+yrow(ws, 7, "", PTC + " — 두산퓨얼셀 제시 물량", lambda y, c, p: f"={R['vol']}*1000", W, m="01_가정 물량(kg) × 1,000. 연도별로 다르면 이 행에 직접 입력")
+yrow(ws, 8, "", PTC + " — LT 반영", lambda y, c, p: f"={c}7*$K$8", W, k=f"={R['share']}", kfmt=P, m="제시 물량의 100% 반영", tot=True)
+sec(ws, 10, "2) 판가  (단위: 원/g)")
+yhdr(ws, 11, "고객", "구분", ("", "", "산출근거"))
+cell(ws, "B12", "두산퓨얼셀"); cell(ws, "B13", "임가공비 = 판가")
+yrow(ws, 12, "두산퓨얼셀", "Pt10%", 0, W, inp=True, m="가공비 및 백금 가격 적용 (Anode 판가 미정)")
+yrow(ws, 13, "임가공비 = 판가", "PtCrCo16.7%", lambda y, c, p: (f"='{S3}'!{c}{R3['cat']}+{R['proc']}" if y == 2027 else f"={p}13*(1-{R['cut']})"), W,
+     m="가공비 및 백금 가격 적용: 2027 = 재료비 원단위 + 제시 가공비, 이후 연 2% 인하", tot=True)
+sec(ws, 15, "3) 시장규모  (단위: g)")
+yhdr(ws, 16, "구분", "", ("", "", "산출근거"))
+yrow(ws, 17, "고객사 총 소요량 (g)", "Pt10%", lambda y, c, p: f"={c}5", W)
+yrow(ws, 18, "", "PtCrCo16.7%", lambda y, c, p: f"={c}7", W)
+yrow(ws, 19, "", "소계 (g)", lambda y, c, p: f"={c}17+{c}18", W, tot=True)
+yrow(ws, 20, "LT 공급량 (%, g)", "LT M/S (%) — Pt10%", lambda y, c, p: f"=$K$6", P)
+yrow(ws, 21, "", "공급량 (g) — Pt10%", lambda y, c, p: f"={c}17*{c}20", W)
+yrow(ws, 22, "", "LT M/S (%) — PtCrCo16.7%", lambda y, c, p: f"=$K$8", P)
+yrow(ws, 23, "", "공급량 (g) — PtCrCo16.7%", lambda y, c, p: f"={c}18*{c}22", W)
+yrow(ws, 24, "합계 (g)", "", lambda y, c, p: f"={c}21+{c}23", W, tot=True)
+yrow(ws, 25, "[참고] Cathode 공급량", "kg", lambda y, c, p: f"={c}23/1000", W1, m="전력·Capa·용수 등 kg 기준 계산에 연결")
+sec(ws, 27, "4) 매출액 및 부가가치  (단위: 원 — 원본 '백만원' 표기는 오기)")
+yhdr(ws, 28, "구분", "", ("", "", "산출근거"))
+yrow(ws, 29, "매출액", "Pt10% Anode", lambda y, c, p: f"={c}12*{c}21", W)
+yrow(ws, 30, "", "PtCrCo16.7% Cathode", lambda y, c, p: f"={c}13*{c}23", W)
+yrow(ws, 31, "", "합계 (원)", lambda y, c, p: f"={c}29+{c}30", W, tot=True, m="판가 × LT 공급량")
+yrow(ws, 32, "부가가치", "Pt10% Anode", lambda y, c, p: f"={c}29-'{S3}'!{c}18", W)
+yrow(ws, 33, "", "PtCrCo16.7% Cathode", lambda y, c, p: f"={c}30-'{S3}'!{c}17", W)
+yrow(ws, 34, "", "합계 (원)", lambda y, c, p: f"={c}32+{c}33", W, tot=True, m="매출액 − 재료비")
+yrow(ws, 35, "부가가치율", "", lambda y, c, p: f"=IF({c}31=0,0,{c}34/{c}31)", P)
+sec(ws, 37, "[참고] 연결용")
+yrow(ws, 38, "재료비 합계", "원", lambda y, c, p: f"='{S3}'!{c}{R3['total']}", W, m="03_재료비")
+yrow(ws, 39, "판가 할인계수", "(1−인하율)^n", lambda y, c, p: f"=(1-{R['cut']})^({c}4-2027)", W4, m="20_입찰시뮬 가공비 민감도 계산용")
 ws.freeze_panes = "D5"
 
 # =============================== 04 소모품비 ===============================
@@ -529,7 +550,7 @@ yhdr(ws, 4, "구분", "항목", ("", "", "비고 / 연결"))
 r15 = {}
 def rr(key, r, b, c, f, fmt=W, tot=False, m=None, inp=False):
     yrow(ws, r, b, c, f, fmt, tot=tot, m=m, inp=inp); r15[key] = r
-rr("sales", 5, "년 매출", "매출액 (원)", lambda y, c, p: f"='{S2}'!{c}{R2['sales']}", tot=True, m="02_물동판가")
+rr("sales", 5, "년 매출", "매출액 (원)", lambda y, c, p: f"='{S2}'!{c}{R2['sales']}", tot=True, m="02_물동시나리오")
 rr("va", 6, "", "부가가치 (원)", lambda y, c, p: f"={c}5-{c}9", m="매출 − 재료비")
 rr("var", 7, "", "부가가치율", lambda y, c, p: f"=IF({c}5=0,0,{c}6/{c}5)", P)
 rr("cogs", 8, "매출원가", "합계 (원)", lambda y, c, p: f"=SUM({c}9:{c}21)", tot=True)
@@ -682,7 +703,7 @@ ws.freeze_panes = "D5"
 S19 = "19_보고자료"; ws = sh(S19, "19. Case 1 : 두산퓨얼셀 Cathode (4 kg/batch) 보고자료 (#2)")
 sec(ws, 3, "1. 매출 · 손익 (억원)")
 yhdr(ws, 4, "구분", "", ("7년 합계", "", "관련 시트"))
-rep = [("총 촉매 소요량 (kg/년)", f"'{S2}'!{{c}}{R2['kg']}", W, "02_물동판가"), ("기준판가 (원/g)", f"'{S2}'!{{c}}{R2['price']}", W, "단가인하율 2%"),
+rep = [("총 촉매 소요량 (kg/년)", f"'{S2}'!{{c}}{R2['kg']}", W, "02_물동시나리오"), ("기준판가 (원/g)", f"'{S2}'!{{c}}{R2['price']}", W, "단가인하율 2%"),
        ("매출액", f"'{S16}'!{{c}}{r16['sales']}", W1, ""), ("재료비", f"'{S16}'!{{c}}{r16['mat']}", W1, "물가상승률 5%"),
        ("부가가치액", f"'{S16}'!{{c}}{r16['va']}", W1, ""), ("제조원가", f"'{S16}'!{{c}}{r16['mfg']}", W1, ""),
        ("   노무비", f"'{S16}'!{{c}}{r16['lab']}", W1, ""), ("   제조경비", f"'{S16}'!{{c}}{r16['exp']}", W1, ""),
@@ -911,7 +932,7 @@ for col, w in zip("BCDEF", [18, 26, 12, 60, 50]): ws.column_dimensions[col].widt
 heads = ["시트", "내용", "원본 시트", "주요 연결 (입력 ← / 출력 →)", "비고"]
 for i, h in enumerate(heads): cell(ws, f"{L(2+i)}5", h, fill=HDR_FILL, font=HDR_FONT)
 toc = [(S1, "기본 가정 (모든 입력값)", "-", "→ 전 시트", "물량·가공비·상승률·단가·Batch 기준"),
-       (S2, "물동·판가·매출", "#3", "← 01, 03 / → 15", "판가 = 재료비 원단위 + 가공비, 연 2% 인하"),
+       (S2, "물동 시나리오 (제시물량·판가·시장규모·매출/부가가치)", "#3", "← 01, 03 / → 15", "판가 = 재료비 원단위 + 가공비, 연 2% 인하"),
        (S3, "재료비", "#4", "← 01, 02 / → 02, 15", "Pt·Cr·Co·카본 소요량 × 단가 × 물가"),
        (S4, "소모품비", "#11", "← 01, 02 / → 15", "수소(열처리)가 62%"),
        (S5, "포장비", "#12", "← 01, 02 / → 15", ""), (S6, "운반비", "#13", "← 01 / → 15 판매비", ""),
